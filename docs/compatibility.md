@@ -65,10 +65,13 @@ These internal identifiers are **intentionally unchanged**:
 - IPC methods and the `status()` result shape, including `markers`.
 
 Keeping these wire names avoids two independent runtime owners during the
-public-ID migration and preserves existing layer rules. The runtime generation
-remains 6: live handles, the timer, and `resize_previous`
-baseline can be reused without reapplying resize settings over external edits.
-After compositor reload, the renamed source installs a fresh runtime normally.
+public-ID migration and preserves existing layer rules. The naming migration
+retained runtime generation 6. Cursor-directed Dwindle placement uses generation
+7 so old callbacks cannot survive an upgrade. Generation changes safely disable
+the old handles and restore owned resize options before installing the new
+runtime; differing external edits are preserved. Same-generation owner handover
+reuses live handles, the timer and the resize baseline. Compositor reload
+installs a fresh runtime normally.
 
 The manifest names the renamed service entry point; external developer
 harnesses that loaded `CornerMenu.qml`

@@ -58,6 +58,11 @@ output to check screen-grouped local workspace numbers and keyboard scrolling,
 and a negative-origin fractional-scale output to exercise cross-monitor
 placement, then remove only that output.
 
+Run the pointer harness with `--placement-only` separately to exercise
+cursor-directed Dwindle drops with forced splits and active/persistent split
+modes. It changes only the disposable compositor's layout options and cleans
+up its test windows/service before exiting.
+
 The plugin itself enables native resize settings in the disposable compositor;
 the pointer runner verifies those settings rather than supplying them. Lifecycle
 checks verify restoration and later external edits. Neither runner edits desktop

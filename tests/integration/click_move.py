@@ -20,6 +20,8 @@ parser.add_argument('--signature', required=True)
 parser.add_argument('--pointer', required=True, type=Path)
 parser.add_argument('--shell-source', type=Path, default=Path('/usr/share/omarchy/shell'))
 parser.add_argument('--multi-monitor', action='store_true')
+parser.add_argument('--placement-only', action='store_true',
+                    help='Run isolated directional-drop regressions, then clean up')
 args = parser.parse_args()
 runtime = args.runtime_dir.resolve()
 live = Path(os.environ.get('XDG_RUNTIME_DIR', '/run/user/' + str(os.getuid()))).resolve()
@@ -121,8 +123,15 @@ def click(x, y, code=272):
 
 
 def marker(address):
-    return wait(lambda: next((mark for mark in status().get('markers', [])
-                             if mark['address'] == address), None), 'Triangle missing')
+    def settled_marker():
+        window = client(address)
+        if not window:
+            return None
+        return next((mark for mark in status().get('markers', [])
+                     if mark['address'] == address
+                     and mark['x'] == window['at'][0] + window['size'][0] - mark['size']
+                     and mark['y'] == window['at'][1]), None)
+    return wait(settled_marker, 'Triangle missing or geometry not settled')
 
 
 def pickup(address):
@@ -262,6 +271,27 @@ with tempfile.TemporaryDirectory(prefix='move-', dir=runtime) as directory:
         drop()
         wait(lambda: not client(a)['floating'], 'Drop did not rejoin tiling')
         print('PASS: ordinary input, removed right drag, single-click tiled pickup, cursor follow and consumed left drop')
+
+        if args.placement_only:
+            # Reproduce force_split=2, then exercise both forced modes,
+            # active-node selection and persistent preselection.
+            for force, active, persistent, preserve in [(2, False, False, False), (2, False, False, True),
+                                                        (1, True, True, True)]:
+                lua('hl.config({dwindle={force_split=' + str(force)
+                    + ',use_active_for_splits=' + str(active).lower()
+                    + ',preserve_split=' + str(preserve).lower()
+                    + ',permanent_direction_override=' + ('1' if persistent else '0') + '}})')
+                points = ([(640, 80, 1, True), (640, 720, 1, False)] if preserve else [])
+                points += [(100, 400, 0, True), (1180, 400, 0, False)]
+                for x, y, axis, less in points:
+                    pickup(a)
+                    move(x, y); drop()
+                    wait(lambda: not client(a)['floating'], 'Directional drop did not retile')
+                    assert (client(a)['at'][axis] < client(b)['at'][axis]) == less, (
+                        'Drop direction ignored', force, active, persistent, x, y, client(a), client(b))
+            lua('hl.config({dwindle={force_split=2,use_active_for_splits=false,permanent_direction_override=0,preserve_split=false}})')
+            print('PASS: left/right/top/bottom tiled placement with forced splits and persistent/active split modes')
+            raise SystemExit(0)
 
         mark = marker(a); click(mark['x'] + 10, mark['y'] + 3)
         wait(lambda: status().get('opened'), 'Tiled menu did not open')
@@ -462,6 +492,9 @@ with tempfile.TemporaryDirectory(prefix='move-', dir=runtime) as directory:
         wait(lambda: client(b) is None, 'Close menu failed')
         print('PASS: target closure cleanup and Close menu')
     except Exception:
+        print('Failure state:', json.dumps({'service': status(), 'clients': clients(),
+                                            'cursor': json.loads(ctl('-j', 'cursorpos')),
+                                            'layers': json.loads(ctl('-j', 'layers'))}))
         for log in work.glob('*.log'):
             print(log.name + ':\n' + log.read_text()[-6000:])
         raise

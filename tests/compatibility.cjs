@@ -18,7 +18,7 @@ for (const key of ['__omarchy_window_corners_runtime', '__omarchy_window_corners
   assert.ok(runtime.includes('"' + key + '"'));
   assert.ok(code.deactivateCode('old-owner').includes('"' + key + '"'));
 }
-assert.ok(runtime.includes('local runtime_version = 6'), 'Pure refactor must preserve live resize baseline/handles');
+assert.ok(runtime.includes('local runtime_version = 7'), 'Placement upgrade must retire old callbacks safely');
 assert.ok(runtime.includes('window-corners-'));
 assert.ok(code.parseMenuEvent('window-corners-menu:new-owner:0xabc:10:20', 'new-owner'));
 assert.ok(code.parseMoveEvent('window-corners-move:new-owner:0xabc:1:1:10:20:100:100', 'new-owner'));

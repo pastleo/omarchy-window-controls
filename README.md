@@ -8,6 +8,9 @@ Small, themed window-action menus for Omarchy:
   or tiled triangle, to pick up that window. It follows the cursor **without
   holding a button**. Single left-click to place; Escape cancels.
 - Floating windows stay floating; tiled windows rejoin tiling when placed.
+  Dwindle drops request the nearest tile's cursor-side split, regardless of
+  `force_split`, while respecting native split-orientation settings.
+  Other layouts retain their native insertion behavior.
 - Application right-clicks inside floating windows remain normal. Only the
   outside border band is a pickup/menu target, not application content.
 - Right-drag pickup has been removed. Left-button border dragging remains native resizing.

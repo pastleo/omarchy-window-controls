@@ -8,6 +8,8 @@ local window = { address = "0x123", mapped = true, visible = true, floating = tr
 local cursor = { x = 97, y = 250 }
 local real_open = io.open
 local popup = false
+local neighbors, layout_commands, focused = {}, {}, nil
+local fail_preselection = false
 local config = { resize_on_border = false, extend_border_grab_area = 2, hover_icon_on_border = false }
 io.open = function() return nil end
 hl = {
@@ -23,7 +25,11 @@ hl = {
   end,
   unbind = function() error("No broad keybind removal") end,
   window_rule = function() error("No window policy") end,
-  get_windows = function() return window and { window } or {} end,
+  get_windows = function()
+    local result = window and { window } or {}
+    for _, neighbor in ipairs(neighbors) do result[#result + 1] = neighbor end
+    return result
+  end,
   get_window = function(selector) return window and selector == "address:" .. window.address and window or nil end,
   get_cursor_pos = function() return cursor end,
   get_monitors = function() return { monitor } end,
@@ -47,7 +53,12 @@ hl = {
     return timer
   end,
   dsp = {
-    focus = function() return function() return { ok = true } end end,
+    focus = function(options) return function() focused = options.window; return { ok = true } end end,
+    layout = function(command) return function()
+      layout_commands[#layout_commands + 1] = command
+      if fail_preselection and command ~= "preselect none" then error("test dispatch failure") end
+      return { ok = true }
+    end end,
     event = function(text) return function() events[#events + 1] = text end end,
     window = {
       drag = function() error("Press-and-hold drag must be removed") end,
@@ -100,6 +111,52 @@ assert(not call(5).pass_event and not runtime.moving, "Escape cancels and consum
 assert(window.at.x == old.x and window.at.y == old.y, "cancel restores floating position")
 assert(call(5).pass_event, "Escape stays normal while idle")
 window.floating = false
+local neighbor = { address = "0x456", mapped = true, floating = false, fullscreen = 0,
+  at = { x = 0, y = 0 }, size = { x = 1280, y = 800 },
+  monitor = monitor, workspace = { id = 1 }, layout = { name = "dwindle" } }
+neighbors = { neighbor }
+for _, point in ipairs({
+  { 100, 400, "left" }, { 1180, 400, "right" }, { 640, 20, "up" }, { 640, 780, "down" },
+}) do
+  assert(runtime.start_move(window.address))
+  cursor.x, cursor.y = point[1], point[2]
+  runtime.finish_move(false)
+  assert(not window.floating)
+  assert(layout_commands[#layout_commands - 1] == "preselect " .. point[3], "drop chooses requested side")
+  assert(layout_commands[#layout_commands] == "preselect none", "drop must clear persistent preselection")
+  assert(focused == "address:" .. window.address, "drop refocuses the selected window")
+end
+local commands = #layout_commands
+assert(runtime.start_move(window.address))
+runtime.finish_move(true)
+assert(#layout_commands == commands, "cancellation must not apply drop preselection")
+neighbor.layout.name = "master"
+assert(runtime.start_move(window.address))
+runtime.finish_move(false)
+assert(#layout_commands == commands and not window.floating, "other layouts retain native insertion")
+neighbor.layout.name = "dwindle"
+fail_preselection = true
+assert(runtime.start_move(window.address))
+runtime.finish_move(false)
+assert(layout_commands[#layout_commands] == "preselect none", "failed placement still clears preselection")
+assert(not runtime.moving and not runtime.timer.enabled, "failed placement disarms movement")
+assert(not window.floating, "failed preselection falls back to ordinary tiling")
+fail_preselection = false
+window.floating = false
+neighbor.workspace.id = 2
+assert(controls.drop_target(cursor, neighbors, 1, window.address) == nil, "ignore other workspaces")
+neighbor.workspace.id = 1
+neighbor.at.x = -1280
+local target, direction = controls.drop_target({ x = -1200, y = 400 }, neighbors, 1, window.address)
+assert(target == neighbor and direction == "left", "negative-origin destination")
+neighbor.at.x = 0
+local distant = { address = "0x789", mapped = true, floating = false, fullscreen = 0,
+  at = { x = -1280, y = 0 }, size = { x = 1000, y = 800 },
+  monitor = monitor, workspace = { id = 1 }, layout = { name = "dwindle" } }
+target, direction = controls.drop_target({ x = -100, y = 400 }, { distant, neighbor }, 1, window.address)
+assert(target == neighbor and direction == "left", "drop in a gap picks nearest tile, not list/focus order")
+assert(controls.drop_target(cursor, {}, 1, window.address) == nil, "empty destination uses native insertion")
+neighbors = {}
 assert(runtime.start_move(window.address) and window.floating)
 runtime.deactivate()
 assert(not config.resize_on_border and config.extend_border_grab_area == 2 and not config.hover_icon_on_border,

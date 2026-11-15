@@ -27,6 +27,18 @@ and, for originally floating windows, position. No default sizing, decoration
 or application-launch settings are changed. This is not the former native
 right-drag path: native drag thresholds and drag-specific snapping do not apply.
 
+For Dwindle, placement chooses the nearest destination tile and its nearest
+normalized edge (left/right/top/bottom). A synchronous native `preselect` applies
+that drop direction even with `force_split`; it is cleared immediately afterward,
+including with persistent direction overrides enabled. An explicit drop replaces
+any existing Dwindle preselection. No global layout option is changed. Other
+layouts and empty destinations retain native insertion behavior; cancellation
+and reload recovery do not apply drop preselection.
+Native orientation policy still applies: with `preserve_split`, `smart_split`
+and `precise_mouse_move` all disabled, Dwindle recalculates split orientation
+from the tile's aspect ratio. Enable the desired orientation policy in desktop
+configuration if top/bottom splits on wide tiles should persist.
+
 ## Input and lifecycle safety
 
 - Five owner-scoped handles are disabled/reused, never broadly unbound or removed.

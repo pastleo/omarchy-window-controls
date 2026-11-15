@@ -8,8 +8,7 @@ local ResizeSettings = dofile(directory .. "resize-settings.lua")
 
 -- Legacy registry/event/layer names intentionally remain wire-compatible.
 local registry_key = "__omarchy_window_corners_runtime"
--- This behavior-preserving refactor reuses version 6 handles and resize baseline.
-local runtime_version = 6
+local runtime_version = 7
 local triangle_size = 14
 local border_padding = 10
 local click_tolerance = 4
@@ -128,6 +127,30 @@ local function valid_record(record)
   return record.workspace > 0 and record.width > 0 and record.height > 0
 end
 
+-- Dwindle's ordinary unfloat honors force_split, not the drop direction.
+-- Pick the nearest destination tile and the nearest normalized edge, like
+-- native smart-split. Other layouts keep their own insertion semantics.
+function M.drop_target(cursor, windows, workspace, address)
+  if not cursor then return nil end
+  local target, distance
+  for _, window in ipairs(windows) do
+    if window.address ~= address and eligible_window(window) and not window.floating
+        and window.workspace.id == workspace and window.size.x > 0 and window.size.y > 0 then
+      local dx = math.max(window.at.x - cursor.x, 0, cursor.x - window.at.x - window.size.x)
+      local dy = math.max(window.at.y - cursor.y, 0, cursor.y - window.at.y - window.size.y)
+      local d = dx * dx + dy * dy
+      if not distance or d < distance then target, distance = window, d end
+    end
+  end
+  if not target or not target.layout or target.layout.name ~= "dwindle" then return nil end
+  local dx = (cursor.x - target.at.x) / target.size.x - 0.5
+  local dy = (cursor.y - target.at.y) / target.size.y - 0.5
+  local direction
+  if math.abs(dx) > math.abs(dy) then direction = dx < 0 and "left" or "right"
+  else direction = dy < 0 and "up" or "down" end
+  return target, direction
+end
+
 -- Click-to-move uses only native dispatches and a reusable 16ms timer. There
 -- are no held/synthetic buttons, native drag handles, or per-frame processes.
 function M.install(owner, recovery)
@@ -164,7 +187,28 @@ function M.install(owner, recovery)
         hl.dispatch(hl.dsp.window.move({ window = selector, x = record.x, y = record.y }))
       end
     end
-    if record.tiled then hl.dispatch(hl.dsp.window.float({ window = selector, action = "off" })) end
+    if record.tiled then
+      local target, direction
+      if not cancel then
+        target, direction = M.drop_target(hl.get_cursor_pos(), hl.get_windows(), window.workspace.id, record.address)
+      end
+      if target then
+        -- Focus selects the destination workspace and also supports
+        -- use_active_for_splits. All layout commands run synchronously.
+        hl.dispatch(hl.dsp.focus({ window = "address:" .. target.address }))
+        pcall(function() hl.dispatch(hl.dsp.layout("preselect " .. direction)) end)
+        local ok, err = pcall(function()
+          hl.dispatch(hl.dsp.window.float({ window = selector, action = "off" }))
+        end)
+        -- Clear even with permanent_direction_override, or a failed dispatch:
+        -- this drop must not control where future application windows open.
+        pcall(function() hl.dispatch(hl.dsp.layout("preselect none")) end)
+        hl.dispatch(hl.dsp.focus({ window = selector }))
+        if not ok then error(err) end
+      else
+        hl.dispatch(hl.dsp.window.float({ window = selector, action = "off" }))
+      end
+    end
   end
   function runtime.finish_move(cancel)
     local move = runtime.moving
