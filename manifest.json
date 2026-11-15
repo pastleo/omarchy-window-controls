@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "pastleo.window-controls",
+  "name": "Window controls",
+  "version": "1.2.0",
+  "author": "pastleo",
+  "description": "Floating border and tiled triangle menus with trackpad-friendly click-to-move controls",
+  "kinds": ["service"],
+  "entryPoints": { "service": "WindowControls.qml" }
+}
