@@ -91,6 +91,11 @@ to make this plugin work. Match the surrounding two-space QML/JS/Lua style.
 - Preserve fullscreen, special-workspace, off-screen and floating-window
   occlusion checks. Geometry is in logical coordinates, including negative
   monitor origins and scaled screens.
+- Floating overlap checks use the verified bottom-to-top `hl.get_windows()`
+  order, with a separate pinned-above-normal priority; never infer stacking from
+  focus history. Keep exact `hypr-underlay`/`hypr-underlay*` exclusions in both
+  Lua and JS occlusion checks and target validation. Background takeover during
+  movement must stop controls without undoing the background's new geometry.
 - Keep triangle anchors inside exclusive screen bounds. Tiled popups open
   inward/below-left and remain clamped to their owning screen. Do not derive
   initial screen ownership from an unmapped panel's zero dimensions.

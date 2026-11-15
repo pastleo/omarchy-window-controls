@@ -43,6 +43,8 @@ use the new ID as well.
 - Omarchy's Quickshell shell and Hyprland **Lua** configuration/API.
 - `omarchy` and `hyprctl` on the session's PATH.
 - Hyprland's runtime Lua binding and timer APIs (`hl.bind`, `hl.timer`, `set_enabled`).
+- Stacking-order behavior is verified against Hyprland v0.56.2; see the
+  [integration notes](docs/stacking-and-underlay.md) when supporting other versions.
 
 ## Local development installation
 
@@ -81,7 +83,8 @@ If upgrading from the earlier manual version, remove its optional
 - Floating-border clicks apply to normal **tiled-layout workspaces**. Omarchy's
   saved floating-layout workspaces and special workspaces are excluded.
 - Tiled triangles hide for fullscreen/special workspaces, off-screen scrolling
-  tiles, and triangles covered by floating windows. Only each triangle's small
+  tiles, and triangles covered by foreground floating windows. Underlay
+  backgrounds are excluded. Only each triangle's small
   square intercepts input; the rest of the screen stays click-through.
 - Close sends a graceful close request. Float and Tile change only the selected
   window's floating state; neither is a fullscreen/maximize command.
@@ -91,8 +94,11 @@ If upgrading from the earlier manual version, remove its optional
   only while a window is picked up** (about 60Hz). The timer is disarmed while
   idle; there are no per-frame processes, synthetic held buttons, or full-screen
   input surfaces. An input-empty hint explains how to place/cancel.
-- Fullscreen and excluded workspaces are ignored. Ambiguous overlapping floating
-  borders are conservatively left alone. Cross-monitor placement uses the normal
+- Fullscreen and excluded workspaces are ignored. Overlapping floating borders
+  use compositor stacking order, with pinned windows above ordinary floats;
+  content/grab areas of higher windows block lower borders. Windows tagged
+  `hypr-underlay` are backgrounds, not occluders or control targets.
+  Cross-monitor placement uses the normal
   workspace under the cursor; monitor gaps keep the last position.
 - Escape and disable restore the original workspace/position and tiling state.
   Workspace changes and window closure stop movement. Compositor reload recovers
@@ -101,6 +107,9 @@ If upgrading from the earlier manual version, remove its optional
 - Triangle geometry refreshes through Quickshell's native Hyprland IPC at 4Hz
   while tiled windows exist, plus window/workspace events. No external polling
   processes or network access are used.
+
+See [stacking and Underlay integration](docs/stacking-and-underlay.md) for the
+version-specific ordering contract and limits of the Lua/QML implementation.
 
 ## Uninstall
 

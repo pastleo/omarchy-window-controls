@@ -61,7 +61,14 @@ placement, then remove only that output.
 Run the pointer harness with `--placement-only` separately to exercise
 cursor-directed Dwindle drops with forced splits and active/persistent split
 modes. It changes only the disposable compositor's layout options and cleans
-up its test windows/service before exiting.
+up its test windows/service before exiting. Add `--multi-monitor` to that mode
+for cross-monitor left/right drops on a negative-origin fractional-scale screen.
+
+Use `--occlusion-only` for Underlay-tag exclusions, overlapping floating borders,
+both stacking orders, exposed lower borders, content pass-through and pinned
+priority. Optionally add `--underlay-plugin /path/to/hypr-underlay.so` to exercise
+an already-built, ABI-matching Underlay library too. It is loaded/unloaded only
+inside the disposable compositor; no native Window Controls plugin is needed.
 
 The plugin itself enables native resize settings in the disposable compositor;
 the pointer runner verifies those settings rather than supplying them. Lifecycle

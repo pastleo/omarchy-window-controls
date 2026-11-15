@@ -8,7 +8,7 @@ local ResizeSettings = dofile(directory .. "resize-settings.lua")
 
 -- Legacy registry/event/layer names intentionally remain wire-compatible.
 local registry_key = "__omarchy_window_corners_runtime"
-local runtime_version = 7
+local runtime_version = 8
 local triangle_size = 14
 local border_padding = 10
 local click_tolerance = 4
@@ -58,9 +58,16 @@ local function contains(window, cursor, padding)
     and cursor.y >= window.at.y - padding and cursor.y < window.at.y + window.size.y + padding
 end
 
+function M.is_background(window)
+  for _, tag in ipairs(window and window.tags or {}) do
+    if tag == "hypr-underlay" or tag == "hypr-underlay*" then return true end
+  end
+  return false
+end
+
 local function eligible_window(window)
   local monitor = window and window.monitor
-  if not present(window) or not monitor or window.fullscreen ~= 0
+  if not present(window) or M.is_background(window) or not monitor or window.fullscreen ~= 0
       or not M.is_tiling_workspace(window.workspace) or monitor.active_special_workspace
       or not on_workspace(window, monitor) then return false end
   for _, tag in ipairs(window.tags or {}) do
@@ -83,7 +90,9 @@ end
 -- All calculations are logical coordinates; monitor width/height are pixels.
 function M.hit_target(cursor, windows, floating_only)
   if not cursor then return nil end
-  for _, window in ipairs(windows) do
+  -- On v0.56.2 hl.get_windows() preserves WindowState's bottom-to-top list,
+  -- also used by native hit-testing. Pinned floats form a separate upper pass.
+  for index, window in ipairs(windows) do
     local monitor = window.monitor
     if eligible_window(window) then
       local width, height = logical_size(monitor)
@@ -97,17 +106,20 @@ function M.hit_target(cursor, windows, floating_only)
           and cursor.y >= y and cursor.y < y + triangle_size)
       if inside and hit then
         local covered = false
-        for _, other in ipairs(windows) do
-          if present(other) and other.address ~= window.address and on_workspace(other, monitor) then
+        for other_index, other in ipairs(windows) do
+          if present(other) and not M.is_background(other) and other.address ~= window.address and on_workspace(other, monitor) then
             if other.fullscreen ~= 0 and other.monitor and other.monitor.id == monitor.id then covered = true end
             if other.floating then
               if not window.floating then
                 if other.at.x < x + triangle_size and other.at.x + other.size.x > x
                     and other.at.y < y + triangle_size and other.at.y + other.size.y > y then covered = true end
-              -- Lua exposes focus history, not authoritative stacking order.
-              -- Reject ambiguous overlaps rather than moving a different
-              -- window than the validated border target.
-              elseif contains(other, cursor, border_padding) then covered = true end
+              else
+                local above = (other.pinned and not window.pinned)
+                  or (not (window.pinned and not other.pinned) and other_index > index)
+                -- Content AND grab bands of higher windows block a lower
+                -- border. A lower window must never block a higher border.
+                if above and contains(other, cursor, border_padding) then covered = true end
+              end
             end
           end
         end
@@ -179,7 +191,8 @@ function M.install(owner, recovery)
     local window = hl.get_window("address:" .. record.address)
     -- Cancellation/reload must also restore a target on an inactive workspace;
     -- visibility is a hit-test guard, not a teardown guard.
-    if not window or not window.mapped or window.hidden or not window.floating or window.fullscreen ~= 0 then return end
+    if not window or not window.mapped or window.hidden or M.is_background(window)
+        or not window.floating or window.fullscreen ~= 0 then return end
     local selector = "address:" .. record.address
     if cancel then
       hl.dispatch(hl.dsp.window.move({ window = selector, workspace = tostring(record.workspace), follow = false }))
@@ -224,7 +237,7 @@ function M.install(owner, recovery)
     if not move or not runtime.active then return end
     local window = hl.get_window("address:" .. move.address)
     local cursor = hl.get_cursor_pos()
-    if not present(window) or not window.floating or window.fullscreen ~= 0 or not cursor then
+    if not present(window) or M.is_background(window) or not window.floating or window.fullscreen ~= 0 or not cursor then
       runtime.finish_move(false)
       return
     end

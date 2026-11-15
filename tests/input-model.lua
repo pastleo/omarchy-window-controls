@@ -38,6 +38,15 @@ local covering = { address = "0x456", mapped = true, visible = true, floating = 
   at = { x = -610, y = -5 }, size = { x = 200, y = 200 }, workspace = { id = 1 }, monitor = monitor }
 windows = { window, covering }
 assert(controls.hit_target(cursor, windows) ~= window, "covered triangle")
+for _, tag in ipairs({ "hypr-underlay", "hypr-underlay*" }) do
+  covering.tags = { tag }
+  assert(controls.hit_target(cursor, windows) == window, "Underlay background does not cover triangle")
+  assert(controls.hit_target({ x = covering.at.x - 3, y = covering.at.y + 100 }, { covering }) == nil,
+    "background itself must not become an action target")
+end
+covering.tags = { "not-hypr-underlay", "hypr-underlay-extra" }
+assert(controls.hit_target(cursor, windows) ~= window, "only exact integration tags are excluded")
+covering.tags = nil
 covering.workspace.id = 2
 assert(controls.hit_target(cursor, windows) == window)
 covering.pinned = true
@@ -50,6 +59,24 @@ end
 for _, point in ipairs({ {-900, 250}, {-1199, 1}, {-1211, 250}, {-900, 511} }) do
   assert(not controls.hit_target({ x = point[1], y = point[2] }, windows), "content/outside border band")
 end
+covering.at = { x = -1300, y = -50 }; covering.size = { x = 900, y = 650 }
+covering.workspace.id = 1; covering.pinned = false
+cursor = { x = -1203, y = 250 } -- window's left border, inside covering's content
+assert(controls.hit_target(cursor, { covering, window }) == window, "lower content cannot block top border")
+assert(controls.hit_target(cursor, { window, covering }) == nil, "higher content blocks lower border")
+covering.pinned = true
+assert(controls.hit_target(cursor, { covering, window }) == nil, "pinned floats override vector order")
+window.pinned = true
+assert(controls.hit_target(cursor, { covering, window }) == window, "pinned peers use stacking order")
+window.pinned = false; covering.pinned = false
+covering.at.x = -1200 -- overlap both left grab bands
+assert(controls.hit_target(cursor, { window, covering }) == covering, "overlapping borders choose top float")
+assert(controls.hit_target(cursor, { covering, window }) == window, "raising changes border target")
+covering.tags = { "hypr-underlay" }; covering.pinned = true
+assert(controls.hit_target(cursor, { window, covering }) == window, "pinned Underlay cannot block border")
+window.tags = { "hypr-underlay" }
+assert(controls.hit_target(cursor, { covering, window }) == nil, "background windows are never selectable")
+window.tags = nil; window.pinned = nil
 window.floating = false
 window.monitor = { id = 2, x = 2000, y = 1000, width = 2560, height = 1600,
   scale = 1.6000000238418579, active_workspace = { id = 1 } }

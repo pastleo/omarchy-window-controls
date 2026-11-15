@@ -110,6 +110,17 @@ cursor.x = 500; runtime.timer.callback()
 assert(not call(5).pass_event and not runtime.moving, "Escape cancels and consumes")
 assert(window.at.x == old.x and window.at.y == old.y, "cancel restores floating position")
 assert(call(5).pass_event, "Escape stays normal while idle")
+window.tags = { "hypr-underlay" }
+assert(not runtime.start_move(window.address), "background must not be picked up")
+window.tags = nil
+assert(runtime.start_move(window.address))
+window.tags = { "hypr-underlay" }
+local background_at = window.at
+cursor.x = cursor.x + 100
+runtime.timer.callback()
+assert(not runtime.moving and not runtime.timer.enabled and window.at == background_at,
+  "background takeover stops movement without repositioning the background")
+window.tags = nil
 window.floating = false
 local neighbor = { address = "0x456", mapped = true, floating = false, fullscreen = 0,
   at = { x = 0, y = 0 }, size = { x = 1280, y = 800 },

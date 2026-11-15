@@ -99,7 +99,8 @@ Item {
     var windows = Hyprland.toplevels.values
     for (var i = 0; i < windows.length; i++) {
       var ipc = windows[i].lastIpcObject
-      if (ipc && ipc.address === root.address && !ipc.fullscreen && !ipc.hidden)
+      if (ipc && ipc.address === root.address && !ipc.fullscreen && !ipc.hidden
+          && !WindowGeometry.isBackground(ipc))
         return windows[i]
     }
     return null

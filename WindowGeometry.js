@@ -16,6 +16,12 @@ function intersects(a, b) {
     && a.y < b.y + b.height && a.y + a.height > b.y
 }
 
+function isBackground(window) {
+  return !!window && (window.tags || []).some(function(tag) {
+    return tag === "hypr-underlay" || tag === "hypr-underlay*"
+  })
+}
+
 // Keep both coordinates INSIDE the marker's screen, including a flush-right
 // or flush-bottom tile. The exclusive screen bounds must not select a neighbor.
 function menuAnchor(mark) {
@@ -35,7 +41,7 @@ function menuPosition(x, y, width, height, screenWidth, screenHeight, preferLeft
 }
 
 function triangleMarker(window, monitor, windows, edge) {
-  if (!window || !monitor || !validAddress(window.address) || window.floating
+  if (!window || !monitor || !validAddress(window.address) || isBackground(window) || window.floating
       || window.fullscreen || window.hidden || window.visible === false || !window.mapped
       || !window.workspace || window.workspace.id < 1
       || window.workspace.id !== monitor.workspace || window.monitor !== monitor.id
@@ -50,7 +56,7 @@ function triangleMarker(window, monitor, windows, edge) {
       || mark.y + edge > monitor.y + monitor.height) return null
   for (var i = 0; i < windows.length; i++) {
     var other = windows[i]
-    if (!other || other.address === window.address || !other.mapped || other.hidden
+    if (!other || isBackground(other) || other.address === window.address || !other.mapped || other.hidden
         || other.visible === false || !other.workspace) continue
     if (other.workspace.id !== monitor.workspace && !other.pinned) continue
     if (other.fullscreen && other.monitor === monitor.id) return null

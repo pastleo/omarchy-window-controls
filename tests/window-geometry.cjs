@@ -14,13 +14,21 @@ assert.equal(point.y, -170);
 for (const change of [{ floating: true }, { fullscreen: 1 }, { fullscreen: 2 }, { hidden: true },
   { mapped: false }, { visible: false }, { workspace: { id: 5 } }, { workspace: { id: -1 } },
   { monitor: 2 }, { address: '0xabc;bad' }, { address: '<img src="https://example.invalid">' },
-  { at: [NaN, 0] }, { size: [0, 100] }, { tags: ['omarchy-floating-workspace*'] }]) {
+  { at: [NaN, 0] }, { size: [0, 100] }, { tags: ['omarchy-floating-workspace*'] },
+  { tags: ['hypr-underlay'] }, { tags: ['hypr-underlay*'] }]) {
   assert.equal(marker({ ...tiled, ...change }), null, JSON.stringify(change));
 }
 assert.equal(marker(tiled, [tiled], { ...monitor, special: true }), null);
 assert.equal(marker({ ...tiled, at: [-500, -170] }), null, 'off-screen scrolling tile');
 const floating = { ...tiled, address: '0xdef', floating: true, at: [-1020, -175], size: [200, 200] };
 assert.equal(marker(tiled, [tiled, floating]), null, 'covered triangle');
+for (const tag of ['hypr-underlay', 'hypr-underlay*']) {
+  assert.ok(marker(tiled, [tiled, { ...floating, tags: [tag], pinned: true }]),
+    'Underlay background must not hide a foreground triangle');
+  assert.equal(model.isBackground({ tags: [tag] }), true);
+}
+assert.equal(model.isBackground({ tags: ['not-hypr-underlay', 'hypr-underlay-extra'] }), false);
+assert.equal(model.isBackground(null), false);
 assert.ok(marker(tiled, [tiled, { ...floating, workspace: { id: 8 } }]));
 assert.equal(marker(tiled, [tiled, { ...floating, workspace: { id: 8 }, pinned: true }]), null);
 assert.ok(marker(tiled, [tiled, { ...floating, at: [-1500, 0] }]));

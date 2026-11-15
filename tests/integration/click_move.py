@@ -22,7 +22,15 @@ parser.add_argument('--shell-source', type=Path, default=Path('/usr/share/omarch
 parser.add_argument('--multi-monitor', action='store_true')
 parser.add_argument('--placement-only', action='store_true',
                     help='Run isolated directional-drop regressions, then clean up')
+parser.add_argument('--occlusion-only', action='store_true',
+                    help='Run isolated Underlay-tag and floating-stack regressions')
+parser.add_argument('--underlay-plugin', type=Path,
+                    help='Optional existing Underlay library, loaded only in the disposable compositor')
 args = parser.parse_args()
+if args.placement_only and args.occlusion_only:
+    parser.error('Choose only one isolated regression mode')
+if args.underlay_plugin and not args.occlusion_only:
+    parser.error('--underlay-plugin requires --occlusion-only')
 runtime = args.runtime_dir.resolve()
 live = Path(os.environ.get('XDG_RUNTIME_DIR', '/run/user/' + str(os.getuid()))).resolve()
 if runtime == live:
@@ -40,6 +48,7 @@ processes = []
 pointer = None
 service = None
 output = None
+underlay_loaded = False
 
 
 def ctl(*arguments):
@@ -234,6 +243,92 @@ def launch(qml, log):
     return process
 
 
+def check_occlusion(a, b):
+    global underlay_loaded
+
+    def close_menu():
+        subprocess.run(['wtype', '-k', 'Escape'], env=env, check=True, timeout=5)
+        wait(lambda: not status().get('opened'), 'Menu Escape failed')
+        wait(lambda: lua('for _,l in ipairs(hl.get_layers({namespace="pastleo-floating-corners"})) do '
+                         'if l.mapped then return false end end return true') == 'true', 'Menu layer did not unmap')
+
+    def menu_at(address, x, y):
+        click(x, y)
+        wait(lambda: status().get('opened'), 'Stacked border/triangle menu did not open')
+        assert status()['address'] == address, ('Wrong stacked menu target', status())
+        close_menu()
+
+    def move_at(address, x, y):
+        before = counts()[1]
+        click(x, y, 273)
+        wait(lambda: status().get('movingAddress') == address, 'Stacked handle did not pick up selected window')
+        assert counts()[1] == before, 'Handle right press leaked into application'
+        escape()
+
+    def content_at(x, y):
+        before = counts()
+        click(x, y, 273); click(x, y)
+        after = counts()
+        assert not status()['opened'] and not status()['movingAddress'], 'Covered lower border stole content input'
+        assert after[0] == before[0] + 1 and after[1] == before[1] + 1, 'Content clicks were consumed'
+
+    act(b, 'float', 'action="on"')
+    act(b, 'resize', 'x=1280,y=800'); act(b, 'move', 'x=0,y=0')
+    time.sleep(.35)
+    wait(lambda: all(m['address'] != a for m in status()['markers']), 'Ordinary full-screen float must cover triangle')
+    if args.underlay_plugin:
+        assert ctl('plugin', 'load', str(args.underlay_plugin.resolve())) == 'ok'
+        underlay_loaded = True
+    # Loading/unloading a native plugin may reload compositor configuration.
+    # Install test rules afterward, just as the real Underlay controller does.
+    lua('_G.window_controls_test_underlay_rule=hl.window_rule({match={tag="hypr-underlay"},'
+        'no_focus=true,no_follow_mouse=true})')
+    act(b, 'tag', 'tag="+hypr-underlay"')
+    act(b, 'pin', 'action="on"')
+    if underlay_loaded:
+        assert ctl('underlay', 'on', 'address:' + b) == 'ok'
+        wait(lambda: json.loads(ctl('underlay-status'))['background_frames'] > 0, 'Underlay did not render background')
+    mark = marker(a)
+    menu_at(a, mark['x'] + 10, mark['y'] + 3)
+    move_at(a, mark['x'] + 10, mark['y'] + 3)
+    assert not client(a)['floating'] and client(b)['floating'] and client(b)['pinned']
+    act(a, 'float', 'action="on"')
+    act(a, 'resize', 'x=420,y=300'); act(a, 'move', 'x=350,y=250')
+    time.sleep(.35)
+    menu_at(a, 347, 400); move_at(a, 347, 400)
+    assert client(b)['at'] == [0, 0] and client(b)['size'] == [1280, 800], 'Background was modified'
+    assert lua('return tostring(_G.__omarchy_window_corners_runtime.start_move("' + b + '"))') == 'false'
+    print('PASS: Underlay-tag background preserves tiled menus/pickup and floating border controls; background is excluded')
+    if underlay_loaded:
+        assert ctl('underlay', 'off') == 'ok'
+    lua('_G.window_controls_test_underlay_rule:set_enabled(false); _G.window_controls_test_underlay_rule=nil')
+    act(b, 'tag', 'tag="-hypr-underlay"'); act(b, 'pin', 'action="off"')
+    if underlay_loaded:
+        assert ctl('plugin', 'unload', str(args.underlay_plugin.resolve())) == 'ok'
+        underlay_loaded = False
+        wait(lambda: lua('local r=_G.__omarchy_window_corners_runtime; return tostring(r and r.active)') == 'true',
+             'Runtime did not reinstall after native plugin unload')
+    act(b, 'resize', 'x=600,y=450'); act(b, 'move', 'x=200,y=200')
+    act(a, 'alter_zorder', 'mode="top"')
+    time.sleep(.35)
+    menu_at(a, 347, 400) # Upper A border inside lower B content.
+    act(b, 'resize', 'x=500,y=400'); act(b, 'move', 'x=500,y=200')
+    act(b, 'alter_zorder', 'mode="top"')
+    time.sleep(.35)
+    content_at(773, 400) # Lower A border inside higher B content.
+    menu_at(b, 497, 400); move_at(b, 497, 400)
+    menu_at(a, 347, 400) # Exposed border of lower A remains usable.
+    act(a, 'alter_zorder', 'mode="top"')
+    menu_at(a, 773, 400); move_at(a, 773, 400)
+    content_at(497, 400) # Lower B border inside higher A content.
+    act(b, 'pin', 'action="on"'); act(b, 'alter_zorder', 'mode="bottom"')
+    order = lua('local t={} for _,w in ipairs(hl.get_windows()) do t[#t+1]=w.address end '
+                'return table.concat(t,",")').split(',')
+    assert order.index(b) < order.index(a), 'Pinned fixture must oppose vector order'
+    menu_at(b, 497, 400); move_at(b, 497, 400)
+    print('PASS: overlapping floating menus/pickup, exposed lower borders, content pass-through, reversed z-order and pinned priority')
+
+
 monitors = json.loads(ctl('-j', 'monitors'))
 if len(monitors) != 1 or monitors[0]['width'] != 1280 or monitors[0]['height'] != 800 or monitors[0]['scale'] != 1:
     parser.error('This harness needs one disposable 1280x800, scale-1 monitor')
@@ -253,6 +348,9 @@ with tempfile.TemporaryDirectory(prefix='move-', dir=runtime) as directory:
         pointer = subprocess.Popen([str(args.pointer.resolve())], env=env, stdin=subprocess.PIPE,
                                    stdout=subprocess.PIPE, text=True)
         a, b = [window['address'] for window in clients()]
+        if args.occlusion_only:
+            check_occlusion(a, b)
+            raise SystemExit(0)
         w = client(a); x, y = w['at'][0] + 100, w['at'][1] + 100
         before = counts()
         click(x, y, 273); click(x, y)
@@ -291,6 +389,25 @@ with tempfile.TemporaryDirectory(prefix='move-', dir=runtime) as directory:
                         'Drop direction ignored', force, active, persistent, x, y, client(a), client(b))
             lua('hl.config({dwindle={force_split=2,use_active_for_splits=false,permanent_direction_override=0,preserve_split=false}})')
             print('PASS: left/right/top/bottom tiled placement with forced splits and persistent/active split modes')
+            if args.multi_monitor:
+                before = {m['name'] for m in json.loads(ctl('-j', 'monitors'))}
+                ctl('output', 'create', 'headless')
+                output = next(m['name'] for m in json.loads(ctl('-j', 'monitors')) if m['name'] not in before)
+                lua('hl.monitor({output="' + output + '",mode="2560x1600@60",position="-1600x-200",scale=1.6})')
+                destination = next(m['activeWorkspace']['id'] for m in json.loads(ctl('-j', 'monitors'))
+                                   if m['name'] == output)
+                act(b, 'move', f'workspace="{destination}",follow=false')
+                time.sleep(.5)
+                service.terminate(); service.wait(timeout=8)
+                service = launch(work / 'shell.qml', work / 'placement-screens.log')
+                wait(lambda: status().get('bindingsInstalled'), 'Directional-drop two-screen shell failed')
+                for x, less in [(-1500, True), (-100, False)]:
+                    pickup(a); move(x, 300)
+                    wait(lambda: client(a)['workspace']['id'] == destination, 'Cross-monitor directional pickup failed')
+                    drop()
+                    wait(lambda: not client(a)['floating'], 'Cross-monitor directional drop did not retile')
+                    assert (client(a)['at'][0] < client(b)['at'][0]) == less, 'Cross-monitor drop side ignored'
+                print('PASS: cross-monitor left/right placement on a negative-origin fractional-scale destination')
             raise SystemExit(0)
 
         mark = marker(a); click(mark['x'] + 10, mark['y'] + 3)
@@ -499,6 +616,12 @@ with tempfile.TemporaryDirectory(prefix='move-', dir=runtime) as directory:
             print(log.name + ':\n' + log.read_text()[-6000:])
         raise
     finally:
+        if underlay_loaded:
+            try:
+                ctl('underlay', 'off')
+                ctl('plugin', 'unload', str(args.underlay_plugin.resolve()))
+            except (subprocess.SubprocessError, OSError):
+                pass
         try:
             lua('local r=_G.__omarchy_window_corners_runtime; if r then r.deactivate() end')
         except (subprocess.SubprocessError, OSError):
