@@ -46,11 +46,13 @@ use the new ID as well.
 - Stacking-order behavior is verified against Hyprland v0.56.2; see the
   [integration notes](docs/stacking-and-underlay.md) when supporting other versions.
 
-## Local development installation
+## Local installation/development
 
 From this project directory, for a fresh installation:
 
 ```sh
+git clone https://github.com/pastleo/omarchy-window-controls.git
+cd omarchy-window-controls
 mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins"
 ln -s "$PWD" "${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/pastleo.window-controls"
 omarchy shell shell rescanPlugins
